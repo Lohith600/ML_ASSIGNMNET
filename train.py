@@ -1,4 +1,4 @@
-"""Audit data, select polynomial ridge models, evaluate once, and write predictions."""
+"""Select polynomial models by grouped CV and write verified predictions."""
 from polynomial import design, powers, ridge_path, fit, metrics, group_partitions
 import argparse
 import json
@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 
-def run(root, roll, out):
+def run(root, roll, out, reuse_lasso=False):
     out.mkdir(parents=True, exist_ok=True)
     (out / 'models').mkdir(exist_ok=True)
     sample = pd.read_csv(root / 'sample_submission.csv')
@@ -46,9 +46,19 @@ def run(root, roll, out):
         cv = pd.DataFrame(records)
         cv.to_csv(out / f'{var}_cv_results.csv', index=False)
         best = min(records, key=lambda r: (r['cv_mse'], r['degree']))
+        best = dict(best, model='ridge')
+        fitter = fit
+        if var in ('var1', 'var2'):
+            from compare_lasso import compare, fit_lasso
+            # Reuse is an explicit option for this unchanged dataset's recorded search.
+            comparison = (json.loads((out / f'{var}_model_comparison.json').read_text())
+                          if reuse_lasso else compare(root, roll, out, var))
+            if comparison['winner'] == 'lasso':
+                best = comparison['lasso']
+                fitter = fit_lasso
         count = best['features']
         a = full[:, :count]
-        coef, intercept = fit(a[dev], y[dev], best['alpha'])
+        coef, intercept = fitter(a[dev], y[dev], best['alpha'])
         hold_pred = a[hold] @ coef + intercept
         hold_metrics = metrics(y[hold], hold_pred)
         train_metrics = metrics(y[dev], a[dev] @ coef + intercept)
@@ -56,7 +66,7 @@ def run(root, roll, out):
         boundary = (np.abs(x[hold]) >= 0.999999).any(axis=1)
         pd.DataFrame({'source_row_zero_based': hold, 'y_true': y[hold], 'y_pred': hold_pred,
                       'residual': y[hold] - hold_pred, 'boundary': boundary}).to_csv(out / f'{var}_holdout.csv', index=False)
-        coef, intercept = fit(a, y, best['alpha'])
+        coef, intercept = fitter(a, y, best['alpha'])
         final_exponents = exponents[:count]
         pred = design(xt, final_exponents) @ coef + intercept
         if len(pred) != len(sample) or not np.isfinite(pred).all():
@@ -65,7 +75,7 @@ def run(root, roll, out):
         pd.DataFrame({'y': pred}).to_csv(prediction_path, index=False)
         np.savez_compressed(out / 'models' / f'{var}.npz', powers=final_exponents,
                             coef=coef, intercept=intercept, features=np.asarray(names),
-                            degree=best['degree'], alpha=best['alpha'])
+                            degree=best['degree'], alpha=best['alpha'], model=best['model'])
         # Verify serialization and CSV row/column fidelity.
         saved = np.load(out / 'models' / f'{var}.npz', allow_pickle=False)
         restored = design(xt, saved['powers']) @ saved['coef'] + saved['intercept']
@@ -74,6 +84,7 @@ def run(root, roll, out):
         assert list(written.columns) == ['y'] and written.shape == sample.shape
         assert np.allclose(written.y, pred, rtol=1e-12, atol=1e-12)
         summary[var] = {'selected': best, 'holdout': hold_metrics, 'development_fit': train_metrics,
+                        'final_nonzero_terms': int(np.count_nonzero(coef)),
                         'mean_baseline_holdout': baseline, 'n_train': len(x), 'n_test': len(xt),
                         'n_development': len(dev), 'n_holdout': len(hold),
                         'duplicate_training_inputs': int(train.duplicated(subset=names).sum()),
@@ -92,5 +103,6 @@ if __name__ == '__main__':
     parser.add_argument('--data-dir', type=Path, default=Path('.'))
     parser.add_argument('--roll', default='BT2024260')
     parser.add_argument('--output-dir', type=Path, default=Path('outputs'))
+    parser.add_argument('--reuse-lasso', action='store_true', help='Reuse the recorded Lasso search for the unchanged dataset.')
     args = parser.parse_args()
-    run(args.data_dir, args.roll, args.output_dir)
+    run(args.data_dir, args.roll, args.output_dir, args.reuse_lasso)

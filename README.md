@@ -1,23 +1,36 @@
 # Assignment 1: Polynomial Regression
 
-Roll number: **BT2024260**. Two independent models predict the net power score
-(var1) and thermal anomaly score (var2). All predictors are polynomial terms;
-ridge regularization controls coefficient magnitude. No non-polynomial model is used.
+Roll number: **BT2024260**.
 
-## Results
+Two separate polynomial models predict Net Power Score (var1) and Thermal
+Anomaly Score (var2). Ridge and Lasso were compared for both problems using
+the same three development folds. The method with lower average validation
+MSE was selected for each problem.
 
-| Problem | Degree | Nonconstant terms | Ridge alpha | 3-fold CV MSE | Holdout MSE | Holdout R2 |
-|---|---:|---:|---:|---:|---:|---:|
-| var1 | 5 | 461 | 3.162278 | 0.584824 | 0.497835 | 0.961435 |
-| var2 | 13 | 559 | 0.316228 | 0.339568 | 0.252532 | 0.994440 |
+## Model comparison
 
-These scores are measured on the reserved validation splits.
-The saved final models are refitted on all 1,000 labeled rows
-per problem after the holdout evaluation.
+| Problem | Best Ridge CV MSE | Best Lasso CV MSE | Selected method | Degree | Alpha |
+|---|---:|---:|---|---:|---:|
+| var1 | 0.584824 | 0.332479 | Lasso | 5 | 0.01 |
+| var2 | 0.339568 | 0.368371 | Ridge | 13 | 0.316228 |
 
-## Run the complete workflow
+Lasso reduces var1's cross-validation MSE by about **43.1%**. Ridge remains
+better for var2 within the tested grids.
 
-Use Python 3.12 and install the requirements in your own environment:
+| Problem | Selected-model holdout MSE | Holdout R2 |
+|---|---:|---:|
+| var1 | 0.371759 | 0.971201 |
+| var2 | 0.252532 | 0.994440 |
+
+The existing holdout was already viewed during the earlier Ridge analysis.
+It is reused as a diagnostic, not a fresh independent evaluation. Model
+selection uses only development-fold CV scores. Final models are refitted
+on all 1,000 training rows for each problem.
+
+## Run the project
+
+Use Python 3.12. Place the four personalized dataset CSVs and
+`sample_submission.csv` beside the scripts, then run:
 
 ```bash
 python -m pip install -r requirements.txt
@@ -26,97 +39,88 @@ python verify.py
 python build_report.py
 ```
 
-Place the four personalized CSV files and `sample_submission.csv` beside the
-scripts. The source CSVs are never modified. `train.py` also accepts
-`--data-dir`, `--roll`, and `--output-dir`; the report and verification scripts
-use the default BT2024260 paths in this assignment workspace.
+`train.py` runs both Ridge searches and both Lasso comparisons before choosing
+models. `--data-dir`, `--roll`, and `--output-dir` are supported. The report and
+verification scripts use the default BT2024260 paths. An optional
+`--reuse-lasso` flag reuses existing comparison results; use it only when the
+datasets and comparison settings are unchanged. The default reruns the search.
 
-Training recreates:
-
-- `outputs/BT2024260_pred_var1.csv` and `outputs/BT2024260_pred_var2.csv`
-- `outputs/models/var1.npz` and `outputs/models/var2.npz`
-- Detailed cross-validation tables, holdout predictions, and `metrics.json`
-
-The report is written to `output/pdf/BT2024260_report.pdf`.
-
-## Run inference without retraining
+Run inference without retraining:
 
 ```bash
 python predict.py --model outputs/models/var1.npz --input BT2024260_test_var1.csv --output outputs/BT2024260_pred_var1.csv
 python predict.py --model outputs/models/var2.npz --input BT2024260_test_var2.csv --output outputs/BT2024260_pred_var2.csv
 ```
 
-Each submission has exactly 1,000 rows, one column named `y`, no saved index,
-and the same row order as its test file. Negative scores and values outside the
-training target range are retained; no unsupported target clipping is applied.
+## Method
 
-## Method and rationale
+1. Check columns, missing values, and repeated inputs. All inputs lie in [-1, 1].
+2. Keep identical input vectors together in every split. Seed 42 reserves 20%
+   of input groups for holdout, leaving 800 development rows for var1 and 802
+   for var2. Split those development groups into three folds.
+3. Create all polynomial terms up to each candidate total degree. For example,
+   x1^2*x2 has total degree 3. Test degrees 1-10 for var1 and 1-20 for var2.
+4. For Ridge, try 23 alpha values from 1e-8 to 1e3. For Lasso, try 19 values
+   from 0.001 to 1 for var1 and 25 from 0.0001 to 1 for var2. Grids are
+   logarithmically spaced. All candidates use identical folds.
+5. Select the method, degree, and alpha with the lowest mean fold MSE. Check
+   holdout performance, then refit on all labeled rows and predict test rows.
 
-1. Check column names, finite numeric values, and duplicate input vectors.
-   Inputs already lie in [-1, 1], so no additional input scaling is fitted.
-2. Group identical input vectors before splitting. Shuffle unique groups with
-   NumPy's random generator, seed 42. Reserve 20% of groups for a final holdout.
-   The development/holdout row counts are 800/200 (var1) and 802/198 (var2).
-3. Divide the development groups into three folds. Repeated inputs always stay
-   in the same fold. Retain all observed responses, including replicate inputs.
-4. Search all total degrees 1-10 for var1 and 1-20 for var2. At each degree,
-   search 23 ridge penalties `np.logspace(-8, 3, 23)`.
-5. Select the degree and alpha with the smallest mean fold MSE. These same
-   folds are reused for every candidate to make comparisons consistent.
-6. Fit that configuration on the development data and evaluate the holdout
-   once. Do not use the holdout to select or revise hyperparameters.
-7. Refit the selected configuration on all labeled data, save the model, and
-   predict the test inputs.
+Ridge centers polynomial columns using only its fitting partition. Lasso
+centers and scales columns to unit standard deviation using only its fitting
+partition. Constant columns use scale 1. Both have an unpenalized intercept.
 
-For each monomial, the sum of feature exponents is at most the chosen degree.
-For example, x1^2*x2 has degree 3. The number of nonconstant terms is
-`comb(n_features + degree, degree) - 1`. The intercept is handled separately.
-
-The fitted objective is:
+The objectives use different conventions:
 
 ```text
-sum_i (y_i - intercept - phi(x_i) @ coefficients)^2
-    + alpha * sum_j coefficients_j^2
+Ridge: SSE + alpha * sum(coefficient^2)
+Lasso: SSE/(2*n) + alpha * sum(abs(coefficient))
 ```
 
-There is no division of the squared-error sum by the number of training rows.
-The intercept is unpenalized. Polynomial columns and targets are centered using
-only the fitted partition. There is no feature standardization after expansion;
-the penalty therefore applies to coefficients in the original monomial basis.
-This is a modeling choice, not an assumption that all polynomial columns have
-equal variance. Fixed bounded inputs avoid exploding raw feature powers.
+SSE is the sum of squared errors and n is the fitting row count. Ridge penalizes
+raw polynomial coefficients; Lasso penalizes standardized coefficients. Their
+alpha values should not be compared directly.
 
-`polynomial.py` uses the smaller of the feature-space and sample-space Gram
-matrices. An eigendecomposition allows the whole alpha path to share one
-decomposition per degree and fold. Final fitting uses a positive-definite
-linear solve. This keeps the implementation practical even for 8,007 terms at
-degree 10 in var1. Both algebraic paths are checked against an independently
-constructed augmented least-squares solution in `verify.py`.
+`polynomial.py` implements Ridge with NumPy/SciPy. `compare_lasso.py` uses
+scikit-learn's LassoLars to compute the piecewise-linear Lasso path and
+interpolates it at the alpha grid. An independent primal/dual objective check
+requires relative gap <= 1.01e-6 for eligible CV candidates. Final Lasso fits
+use coordinate descent with a relative dual-gap threshold of 1e-7. Saved
+Lasso coefficients are converted back to the original feature basis, so
+`predict.py` does not need scikit-learn or a separate scaler at inference time.
 
-## Interpretation and limitations
+The initial coordinate-descent search was replaced by the LARS path solver to
+resolve slow convergence with strongly correlated, high-degree terms. The
+reported comparison files contain the completed LARS searches.
 
-- Var1's CV MSE reaches its minimum at degree 5, then increases. Adding
-  degrees above 5 is not justified by these validation results.
-- Var2 benefits from a higher-degree model, with its minimum at degree 13.
-  Degree 20 has a higher CV MSE despite greater flexibility.
-- Var1 has at least one boundary-valued input in 87.4% of training rows and
-  98.2% of test rows. Its holdout boundary MSE is 0.517048, versus 0.334074
-  for interior rows. This covariate shift means test performance may differ
-  from random holdout performance.
-- The CV minimum is a model-selection statistic and can be optimistic. The
-  separate holdout provides an additional check, but it is still one split.
-- No test-based hyperparameter choices or target clipping were used.
-  Test inputs were inspected only for schema and distribution.
+## Files and checks
 
-## Submission status
+- `outputs/BT2024260_pred_var1.csv` and `outputs/BT2024260_pred_var2.csv`:
+  1,000 predictions each, one `y` column, no index, original test-row order.
+- `outputs/models/`: saved coefficients, exponents, intercepts, and settings.
+- `outputs/*_cv_results.csv`: all searched settings and fold errors; files
+  without `lasso` in the name record the Ridge search.
+- `outputs/*_model_comparison.json`: best Ridge/Lasso settings and the winner.
+- `outputs/metrics.json`: selected-model evaluation results.
+- `outputs/ridge_baseline_metrics.json`: original Ridge-only results for reference.
+- `output/pdf/BT2024260_report.pdf`: the assignment report.
 
-The two prediction CSVs and the local report are generated. The report includes
-the repository link: [ML_ASSIGNMNET](https://github.com/Lohith600/ML_ASSIGNMNET).
-To rebuild it with that link:
+`verify.py` checks Ridge against an independent least-squares solution and
+checks the selected Lasso coefficients against its optimality conditions.
+It also checks polynomial terms, split separation, serialized predictions,
+finite values, CSV columns, row count, and row order.
+
+Var1's test inputs are more concentrated at the boundaries than its training
+inputs (98.2% versus 87.4% have at least one input at -1 or 1). This may affect
+prediction accuracy. No target clipping or test-based model selection is used.
+Original datasets are unchanged and are excluded from Git by default.
+
+## Repository
+
+[ML_ASSIGNMNET](https://github.com/Lohith600/ML_ASSIGNMNET)
+
+The report includes this link by default. To use another URL:
 
 ```bash
 python build_report.py --repo-url https://github.com/Lohith600/ML_ASSIGNMNET
 ```
-
-The repository URL is also the report builder's default. The `.gitignore` keeps
-personalized source datasets out of the repository by default.

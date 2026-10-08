@@ -33,6 +33,21 @@ def main():
             assert not set(tr) & set(hold) and not set(va) & set(hold)
         assert sorted(np.concatenate([va for _, va in folds])) == sorted(dev)
         model = np.load(f'outputs/models/{var}.npz', allow_pickle=False)
+        if 'model' in model.files and str(model['model']) == 'lasso':
+            # Independent optimality check in the standardized feature basis.
+            a = design(x, model['powers'])
+            scale = a.std(axis=0)
+            scale[scale < 1e-12] = 1.0
+            z = (a - a.mean(axis=0)) / scale
+            residual = train.y.to_numpy() - (a @ model['coef'] + model['intercept'])
+            gamma = model['coef'] * scale
+            correlations = z.T @ residual / len(x)
+            active = gamma != 0
+            alpha = float(model['alpha'])
+            assert abs(residual.mean()) < 1e-8
+            assert np.max(np.abs(correlations[active] - alpha * np.sign(gamma[active]))) < 1e-4
+            if (~active).any():
+                assert np.max(np.abs(correlations[~active])) <= alpha + 1e-4
         test = pd.read_csv(f'BT2024260_test_{var}.csv')
         pred = design(test.to_numpy(), model['powers']) @ model['coef'] + model['intercept']
         submission = pd.read_csv(f'outputs/BT2024260_pred_{var}.csv')
@@ -40,7 +55,7 @@ def main():
         assert np.isfinite(submission.y).all()
         np.testing.assert_allclose(pred, submission.y, rtol=1e-12, atol=1e-12)
         assert int(model['powers'].sum(axis=1).max()) == int(model['degree'])
-    print('PASS: primal/dual ridge vs independent least squares; polynomial terms; grouped splits; saved models; submission schema, count, order, and values.')
+    print('PASS: primal/dual ridge vs independent least squares; Lasso KKT optimality when selected; polynomial terms; grouped splits; saved models; submission schema, count, order, and values.')
 
 
 if __name__ == '__main__':
