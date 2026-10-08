@@ -1,0 +1,6 @@
+__pycache__/
+.venv/
+tmp/
+# Personalized source datasets stay local by default.
+BT*_train_*.csv
+BT*_test_*.csv

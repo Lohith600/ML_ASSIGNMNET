@@ -1,0 +1,84 @@
+{
+  "var1": {
+    "selected": {
+      "degree": 5,
+      "alpha": 3.1622776601683795,
+      "features": 461,
+      "cv_mse": 0.5848242000366562,
+      "cv_std": 0.07356903569795613,
+      "fold_1_mse": 0.6824921389974316,
+      "fold_2_mse": 0.5670439709856667,
+      "fold_3_mse": 0.5049364901268707
+    },
+    "holdout": {
+      "mse": 0.49783536371910925,
+      "r2": 0.9614345083297925
+    },
+    "development_fit": {
+      "mse": 0.19288061982708504,
+      "r2": 0.9816402058458856
+    },
+    "mean_baseline_holdout": {
+      "mse": 12.987200334728696,
+      "r2": -0.006071088615736686
+    },
+    "n_train": 1000,
+    "n_test": 1000,
+    "n_development": 800,
+    "n_holdout": 200,
+    "duplicate_training_inputs": 1,
+    "train_boundary_fraction": 0.874,
+    "test_boundary_fraction": 0.982,
+    "boundary_holdout": {
+      "mse": 0.5170475376097349,
+      "r2": 0.9631004427519545
+    },
+    "interior_holdout": {
+      "mse": 0.33407445293710986,
+      "r2": 0.9032249327490786
+    },
+    "prediction_min": -10.271578315050883,
+    "prediction_max": 17.369246197073185
+  },
+  "var2": {
+    "selected": {
+      "degree": 13,
+      "alpha": 0.31622776601683794,
+      "features": 559,
+      "cv_mse": 0.339567693918559,
+      "cv_std": 0.0132310193194703,
+      "fold_1_mse": 0.3229259084905608,
+      "fold_2_mse": 0.3552965581278221,
+      "fold_3_mse": 0.34048061513729416
+    },
+    "holdout": {
+      "mse": 0.25253228895674024,
+      "r2": 0.9944398770806602
+    },
+    "development_fit": {
+      "mse": 0.1711473835992864,
+      "r2": 0.9963392370485941
+    },
+    "mean_baseline_holdout": {
+      "mse": 46.160727235388606,
+      "r2": -0.016342577557850735
+    },
+    "n_train": 1000,
+    "n_test": 1000,
+    "n_development": 802,
+    "n_holdout": 198,
+    "duplicate_training_inputs": 9,
+    "train_boundary_fraction": 0.578,
+    "test_boundary_fraction": 0.586,
+    "boundary_holdout": {
+      "mse": 0.28634072343973505,
+      "r2": 0.9960852309382748
+    },
+    "interior_holdout": {
+      "mse": 0.21112645346633083,
+      "r2": 0.9331767231563814
+    },
+    "prediction_min": -29.840015305793106,
+    "prediction_max": 31.137006606623817
+  }
+}
